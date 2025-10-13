@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT_DIR))
 import customtkinter as ctk
 from utils.logger import get_logger, log_info
 from config.settings import UI_CONFIG
-from config.ui_theme import CTK_THEME
+from ui.main_window import MainWindow
 
 logger = get_logger(__name__)
 
@@ -27,6 +27,7 @@ def setup_customtkinter():
     ctk.set_default_color_theme("blue")
 
 
+# Mantener la clase vieja para compatibilidad (sin usar)
 class BiomechApp(ctk.CTk):
     """
     Aplicación principal del Sistema de Análisis Biomecánico.
@@ -231,8 +232,13 @@ def main():
         # Configurar CustomTkinter
         setup_customtkinter()
 
-        # Crear y ejecutar aplicación
-        app = BiomechApp()
+        log_info("=" * 60)
+        log_info("Sistema de Análisis Biomecánico de Rodilla")
+        log_info("Universidad Antonio Nariño - Ingeniería Biomédica")
+        log_info("=" * 60)
+
+        # Crear y ejecutar aplicación con interfaz completa
+        app = MainWindow()
         app.mainloop()
 
     except Exception as e:
