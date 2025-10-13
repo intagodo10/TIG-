@@ -1,0 +1,66 @@
+# Sistema Integrado de Análisis Biomecánico de Rodilla
+# Dependencias del proyecto
+#
+# IMPORTANTE: Este proyecto requiere Python 3.8, 3.9, 3.10 o 3.11
+# OpenSim 4.5 NO es compatible con Python 3.12+
+#
+# Versión recomendada: Python 3.10.x (mejor compatibilidad)
+
+# Core científico
+numpy>=1.21.0,<2.0.0
+scipy>=1.7.0,<1.14.0
+pandas>=1.3.0,<3.0.0
+scikit-learn>=1.0.0,<1.6.0
+
+# OpenSim ( INSTALACIÓN ESPECIAL REQUERIDA)
+# IMPORTANTE: opensim NO se instala correctamente via pip en la mayoría de casos
+#
+# OPCIÓN 1 (RECOMENDADA): Instalación manual desde instalador oficial
+#   1. Descargar OpenSim 4.5 desde: https://simtk.org/frs/?group_id=91
+#   2. Instalar el programa completo
+#   3. Luego instalar el paquete Python:
+#      cd "C:\OpenSim 4.5\sdk\python"
+#      python setup.py install
+#
+# OPCIÓN 2: Intentar pip (puede fallar)
+#   pip install opensim
+#
+# Para verificar instalación: python -c "import opensim; print(opensim.__version__)"
+#
+# Si no tienes OpenSim instalado, el sistema funcionará parcialmente
+# (sin análisis IK/ID, pero sí con adquisición y procesamiento de datos)
+
+# Procesamiento de señales
+pykalman>=0.9.5
+
+# Sensores y hardware
+bleak>=0.19.0  # Bluetooth para Xsens DOT
+pyserial>=3.5  # Comunicación serial (si fuera necesario)
+openpyxl>=3.0.9  # Lectura de archivos Excel de Valkyria
+
+# Interfaz gráfica
+customtkinter>=5.0.0
+pillow>=9.0.0
+tkinterdnd2>=0.3.0  # Drag and drop
+
+# Visualización
+matplotlib>=3.5.0
+seaborn>=0.12.0
+plotly>=5.0.0
+
+# Reportes
+reportlab>=3.6.0  # PDF generation
+xlsxwriter>=3.0.0  # Excel avanzado
+jinja2>=3.0.0  # Templates
+
+# Base de datos
+sqlalchemy>=1.4.0
+
+# Utilidades
+python-dateutil>=2.8.0
+pytz>=2021.3
+tqdm>=4.62.0  # Progress bars
+
+# Testing (opcional)
+pytest>=7.0.0
+pytest-cov>=3.0.0
