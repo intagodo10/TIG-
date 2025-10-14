@@ -6,13 +6,18 @@ Permite capturar datos de sensores y plataforma de fuerza.
 
 import customtkinter as ctk
 import numpy as np
-from typing import Optional, Callable
-from tkinter import filedialog
+import asyncio
+from typing import Optional, Callable, Dict
+from tkinter import filedialog, messagebox
+from threading import Thread
 
 from config.ui_theme import COLORS, FONTS
 from config.settings import IMU_CONFIG, EXERCISES
 from ui.components import SensorPanel, PlotWidget
+from ui.dialogs import show_sensor_assignment_dialog
 from core.data_acquisition.force_platform import ForcePlatformHandler
+from core.data_acquisition.imu_handler import IMUHandler
+from core.data_acquisition.xsens_dot_protocol import OutputMode
 from core.analysis.biomech_analyzer import BiomechAnalyzer
 from models.patient import Patient
 from utils.logger import get_logger
@@ -39,8 +44,11 @@ class CaptureView(ctk.CTkFrame):
 
         self.on_analysis_complete = on_analysis_complete
         self.force_handler = ForcePlatformHandler()
+        self.imu_handler = IMUHandler()
         self.is_recording = False
         self.captured_data = None  # Datos capturados para análisis
+        self.sensors_connected = False
+        self.sensors_calibrated = False
 
         self.configure(fg_color=COLORS["bg_primary"])
 
@@ -153,15 +161,30 @@ class CaptureView(ctk.CTkFrame):
         )
         self.sensor_panel.pack(fill="both", expand=True, pady=(0, 10))
 
-        connect_button = ctk.CTkButton(
-            sensor_section,
-            text="🔌 Conectar Sensores",
+        # Botones de sensores
+        sensor_buttons_frame = ctk.CTkFrame(sensor_section, fg_color="transparent")
+        sensor_buttons_frame.pack(fill="x")
+
+        self.connect_button = ctk.CTkButton(
+            sensor_buttons_frame,
+            text="🔍 Escanear y Conectar",
             command=self._connect_sensors,
             height=36,
             fg_color=COLORS["accent_secondary"],
             hover_color="#3a8aef"
         )
-        connect_button.pack(fill="x")
+        self.connect_button.pack(fill="x", pady=(0, 5))
+
+        self.calibrate_button = ctk.CTkButton(
+            sensor_buttons_frame,
+            text="📐 Calibrar (N-pose)",
+            command=self._calibrate_sensors,
+            height=36,
+            fg_color=COLORS["warning"],
+            hover_color="#f0c030",
+            state="disabled"
+        )
+        self.calibrate_button.pack(fill="x")
 
         # Sección: Control de Grabación
         record_frame = self._create_section(left_panel, "Control de Grabación")
@@ -300,14 +323,195 @@ class CaptureView(ctk.CTkFrame):
         logger.debug("Gráfico de fuerzas actualizado")
 
     def _connect_sensors(self):
-        """Conecta los sensores IMU (placeholder)."""
-        logger.info("Conectando sensores IMU...")
+        """Conecta los sensores IMU con escaneo y asignación real."""
+        logger.info("Iniciando proceso de conexión de sensores...")
 
-        # Simular conexión
-        self.sensor_panel.update_all_sensors("connecting")
-        self.after(1000, lambda: self.sensor_panel.update_all_sensors("connected"))
+        # Deshabilitar botón
+        self.connect_button.configure(state="disabled", text="⏳ Procesando...")
 
-        logger.info("Sensores conectados (simulado)")
+        # Mostrar diálogo de asignación
+        required_locations = IMU_CONFIG["locations"]
+        assignments = show_sensor_assignment_dialog(self, required_locations)
+
+        if assignments is None:
+            # Usuario canceló
+            logger.info("Asignación de sensores cancelada por el usuario")
+            self.connect_button.configure(state="normal", text="🔍 Escanear y Conectar")
+            return
+
+        # Conectar sensores en thread separado
+        Thread(target=self._connect_sensors_async, args=(assignments,), daemon=True).start()
+
+    def _connect_sensors_async(self, assignments: Dict[str, str]):
+        """
+        Conecta sensores de forma asíncrona.
+
+        Args:
+            assignments: Diccionario {ubicación: dirección_mac}
+        """
+        try:
+            # Actualizar estado visual
+            self.after(0, lambda: self.sensor_panel.update_all_sensors("connecting"))
+
+            # Ejecutar conexión asíncrona
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            success = loop.run_until_complete(self.imu_handler.connect_sensors(assignments))
+            loop.close()
+
+            if success:
+                logger.info("Todos los sensores conectados exitosamente")
+
+                # Configurar sensores (60 Hz, modo Complete Quaternion)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                configured = loop.run_until_complete(
+                    self.imu_handler.configure_all_sensors(
+                        output_rate=60,
+                        output_mode=OutputMode.COMPLETE_QUATERNION
+                    )
+                )
+                loop.close()
+
+                if configured:
+                    logger.info("Sensores configurados correctamente")
+
+                    # Actualizar UI
+                    self.after(0, self._on_sensors_connected_success)
+                else:
+                    raise Exception("Error configurando sensores")
+            else:
+                raise Exception("Error conectando algunos sensores")
+
+        except Exception as e:
+            logger.error(f"Error conectando sensores: {e}", exc_info=True)
+            self.after(0, lambda: self._on_sensors_connected_error(str(e)))
+
+    def _on_sensors_connected_success(self):
+        """Callback cuando los sensores se conectan exitosamente."""
+        self.sensors_connected = True
+
+        # Actualizar estado visual
+        self.sensor_panel.update_all_sensors("connected")
+
+        # Actualizar botones
+        self.connect_button.configure(
+            state="normal",
+            text="✓ Sensores Conectados",
+            fg_color=COLORS["success"]
+        )
+        self.calibrate_button.configure(state="normal")
+
+        messagebox.showinfo(
+            "Sensores Conectados",
+            "Todos los sensores se conectaron exitosamente.\n\n"
+            "Ahora debes calibrarlos en posición N-pose."
+        )
+
+    def _on_sensors_connected_error(self, error_msg: str):
+        """Callback cuando hay error conectando sensores."""
+        self.sensors_connected = False
+
+        # Actualizar estado visual
+        self.sensor_panel.update_all_sensors("error")
+
+        # Rehabilitar botón
+        self.connect_button.configure(state="normal", text="🔍 Escanear y Conectar")
+
+        messagebox.showerror(
+            "Error de Conexión",
+            f"No se pudieron conectar los sensores:\n\n{error_msg}"
+        )
+
+    def _calibrate_sensors(self):
+        """Calibra los sensores en N-pose."""
+        if not self.sensors_connected:
+            messagebox.showwarning("Sensores no conectados", "Primero debes conectar los sensores.")
+            return
+
+        # Mostrar instrucciones
+        response = messagebox.askokcancel(
+            "Calibración N-Pose",
+            "INSTRUCCIONES DE CALIBRACIÓN:\n\n"
+            "1. Párate con pies separados al ancho de hombros\n"
+            "2. Brazos relajados a los lados del cuerpo\n"
+            "3. Mirada hacia adelante\n"
+            "4. Permanece COMPLETAMENTE INMÓVIL durante 5 segundos\n\n"
+            "Presiona OK cuando estés listo para iniciar."
+        )
+
+        if not response:
+            return
+
+        logger.info("Iniciando calibración N-pose...")
+
+        # Deshabilitar botones
+        self.calibrate_button.configure(state="disabled", text="⏳ Calibrando...")
+        self.connect_button.configure(state="disabled")
+
+        # Ejecutar calibración en thread separado
+        Thread(target=self._calibrate_sensors_async, daemon=True).start()
+
+    def _calibrate_sensors_async(self):
+        """Ejecuta la calibración de forma asíncrona."""
+        try:
+            # Countdown visual (3 segundos)
+            for i in range(3, 0, -1):
+                self.after(0, lambda n=i: self.status_label.configure(text=f"Calibrando en {n}..."))
+                import time
+                time.sleep(1)
+
+            self.after(0, lambda: self.status_label.configure(text="¡QUIETO! Calibrando..."))
+
+            # Ejecutar calibración (5 segundos)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            success = loop.run_until_complete(self.imu_handler.calibrate_all_sensors(duration=5.0))
+            loop.close()
+
+            if success:
+                logger.info("Calibración completada exitosamente")
+                self.after(0, self._on_calibration_success)
+            else:
+                raise Exception("Error durante la calibración")
+
+        except Exception as e:
+            logger.error(f"Error en calibración: {e}", exc_info=True)
+            self.after(0, lambda: self._on_calibration_error(str(e)))
+
+    def _on_calibration_success(self):
+        """Callback cuando la calibración es exitosa."""
+        self.sensors_calibrated = True
+
+        # Actualizar UI
+        self.calibrate_button.configure(
+            state="normal",
+            text="✓ Calibración Completa",
+            fg_color=COLORS["success"]
+        )
+        self.connect_button.configure(state="normal")
+        self.status_label.configure(text="Sensores calibrados - Listo para grabar")
+
+        messagebox.showinfo(
+            "Calibración Exitosa",
+            "Los sensores se calibraron correctamente.\n\n"
+            "Ahora puedes iniciar la grabación."
+        )
+
+    def _on_calibration_error(self, error_msg: str):
+        """Callback cuando hay error en calibración."""
+        self.sensors_calibrated = False
+
+        # Rehabilitar botones
+        self.calibrate_button.configure(state="normal", text="📐 Calibrar (N-pose)")
+        self.connect_button.configure(state="normal")
+        self.status_label.configure(text="Error en calibración")
+
+        messagebox.showerror(
+            "Error de Calibración",
+            f"No se pudo calibrar los sensores:\n\n{error_msg}\n\n"
+            "Verifica que estés completamente inmóvil durante el proceso."
+        )
 
     def _toggle_recording(self):
         """Alterna entre iniciar y detener grabación."""
@@ -318,7 +522,21 @@ class CaptureView(ctk.CTkFrame):
 
     def _start_recording(self):
         """Inicia la grabación."""
-        logger.info("Iniciando grabación...")
+        # Verificar que los sensores estén calibrados
+        if not self.sensors_calibrated:
+            messagebox.showwarning(
+                "Sensores no calibrados",
+                "Debes calibrar los sensores antes de grabar."
+            )
+            return
+
+        logger.info("Iniciando grabación de datos IMU...")
+
+        # Limpiar buffers de datos anteriores
+        self.imu_handler.clear_all_buffers()
+
+        # Iniciar streaming en thread separado
+        Thread(target=self._start_streaming_async, daemon=True).start()
 
         self.is_recording = True
         self.record_button.configure(
@@ -326,13 +544,62 @@ class CaptureView(ctk.CTkFrame):
             fg_color=COLORS["error"],
             hover_color="#ff5252"
         )
-        self.status_label.configure(text="Grabando...")
+        self.status_label.configure(text="Grabando datos IMU...")
+
+        # Deshabilitar botones de configuración
+        self.connect_button.configure(state="disabled")
+        self.calibrate_button.configure(state="disabled")
 
         logger.info("Grabación iniciada")
+
+    def _start_streaming_async(self):
+        """Inicia el streaming de datos de forma asíncrona."""
+        try:
+            # Callback para actualizar gráficos en tiempo real
+            def data_callback(location: str, imu_data):
+                """Callback para datos en tiempo real."""
+                # Aquí podrías actualizar gráficos en tiempo real si lo deseas
+                pass
+
+            # Iniciar streaming
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(
+                self.imu_handler.start_streaming_all(callback=data_callback)
+            )
+            loop.close()
+
+            logger.info("Streaming iniciado en todos los sensores")
+
+        except Exception as e:
+            logger.error(f"Error iniciando streaming: {e}", exc_info=True)
+            self.after(0, lambda: self._on_streaming_error(str(e)))
+
+    def _on_streaming_error(self, error_msg: str):
+        """Callback cuando hay error en streaming."""
+        self.is_recording = False
+
+        self.record_button.configure(
+            text="▶ Iniciar Grabación",
+            fg_color=COLORS["success"],
+            hover_color="#5abf6f"
+        )
+        self.status_label.configure(text="Error en grabación")
+
+        self.connect_button.configure(state="normal")
+        self.calibrate_button.configure(state="normal")
+
+        messagebox.showerror(
+            "Error de Grabación",
+            f"Error iniciando la grabación:\n\n{error_msg}"
+        )
 
     def _stop_recording(self):
         """Detiene la grabación."""
         logger.info("Deteniendo grabación...")
+
+        # Detener streaming en thread separado
+        Thread(target=self._stop_streaming_async, daemon=True).start()
 
         self.is_recording = False
         self.record_button.configure(
@@ -340,9 +607,35 @@ class CaptureView(ctk.CTkFrame):
             fg_color=COLORS["success"],
             hover_color="#5abf6f"
         )
-        self.status_label.configure(text="Grabación completada")
+        self.status_label.configure(text="Procesando datos capturados...")
 
         logger.info("Grabación detenida")
+
+    def _stop_streaming_async(self):
+        """Detiene el streaming de forma asíncrona."""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.imu_handler.stop_streaming_all())
+            loop.close()
+
+            logger.info("Streaming detenido en todos los sensores")
+
+            # Habilitar análisis
+            self.after(0, self._on_streaming_stopped)
+
+        except Exception as e:
+            logger.error(f"Error deteniendo streaming: {e}", exc_info=True)
+
+    def _on_streaming_stopped(self):
+        """Callback cuando el streaming se detiene exitosamente."""
+        # Rehabilitar botones
+        self.connect_button.configure(state="normal")
+        self.calibrate_button.configure(state="normal")
+
+        # Habilitar botón de análisis
+        self.analyze_button.configure(state="normal")
+        self.status_label.configure(text="Grabación completada - Listo para analizar")
 
     def _analyze_data(self):
         """Ejecuta el análisis de los datos capturados."""
@@ -367,12 +660,18 @@ class CaptureView(ctk.CTkFrame):
                 'mz': force_data_dict['mz']
             }
 
-            # Generar datos sintéticos de IMU (simulación temporal)
-            # En producción, esto vendría de los sensores reales
-            time_imu, imu_data = self._generate_synthetic_imu_data(
-                duration=time_force[-1],
-                fs=60.0
-            )
+            # Obtener datos de IMU (reales o sintéticos)
+            if self.sensors_connected and self.sensors_calibrated:
+                # Usar datos reales de los sensores
+                logger.info("Usando datos REALES de los sensores IMU")
+                time_imu, imu_data = self._get_real_imu_data()
+            else:
+                # Generar datos sintéticos (fallback para testing sin sensores)
+                logger.warning("Usando datos SINTÉTICOS de IMU (sensores no conectados)")
+                time_imu, imu_data = self._generate_synthetic_imu_data(
+                    duration=time_force[-1],
+                    fs=60.0
+                )
 
             # Crear paciente de prueba si no existe
             # En producción, esto vendría de la vista de paciente
@@ -423,6 +722,52 @@ class CaptureView(ctk.CTkFrame):
 
         finally:
             self.analyze_button.configure(state="normal")
+
+    def _get_real_imu_data(self):
+        """
+        Obtiene datos reales de los sensores IMU.
+
+        Returns:
+            Tupla (time, imu_data) con los datos capturados
+        """
+        # Obtener datos de todos los sensores
+        all_data = self.imu_handler.get_all_data()
+
+        if not all_data:
+            raise ValueError("No hay datos capturados de los sensores")
+
+        # Convertir a formato esperado por el analizador
+        imu_data = {}
+        time_arrays = []
+
+        for location, data_list in all_data.items():
+            if not data_list:
+                logger.warning(f"No hay datos para sensor {location}")
+                continue
+
+            # Extraer timestamps
+            timestamps = np.array([d.timestamp for d in data_list])
+            time_arrays.append(timestamps)
+
+            # Extraer datos
+            accelerations = np.array([d.acceleration for d in data_list])
+            angular_velocities = np.array([d.angular_velocity for d in data_list])
+            quaternions = np.array([d.quaternion for d in data_list])
+
+            imu_data[location] = {
+                'acceleration': accelerations,
+                'angular_velocity': angular_velocities,
+                'quaternion': quaternions
+            }
+
+            logger.info(f"Sensor {location}: {len(data_list)} muestras capturadas")
+
+        # Usar el array de tiempo más largo (o el primero si todos son iguales)
+        time_imu = time_arrays[0] if time_arrays else np.array([])
+
+        logger.info(f"Datos IMU reales obtenidos: {len(time_imu)} muestras, {len(imu_data)} sensores")
+
+        return time_imu, imu_data
 
     def _generate_synthetic_imu_data(self, duration: float, fs: float = 60.0):
         """
