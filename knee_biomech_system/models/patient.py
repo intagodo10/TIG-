@@ -93,6 +93,16 @@ class Patient:
         """
         return self.mass * 9.81
 
+    @property
+    def body_weight(self) -> float:
+        """
+        Alias para body_weight_newtons.
+
+        Returns:
+            Peso en N
+        """
+        return self.body_weight_newtons
+
     def to_dict(self) -> Dict:
         """
         Convierte el paciente a diccionario.

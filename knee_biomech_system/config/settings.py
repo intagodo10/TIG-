@@ -200,10 +200,15 @@ ALERT_THRESHOLDS = {
     "rom_min": 60,  # grados
     "rom_max": 130,  # grados
     "moment_max": 2.5,  # Nm/kg
+    "max_knee_moment": 3.5,  # Nm/kg
     "grf_squat_max": 3.0,  # × peso corporal
     "grf_landing_max": 6.0,  # × peso corporal
     "loading_rate_max": 100,  # BW/s (body weights por segundo)
+    "max_loading_rate": 75,  # BW/s
+    "max_angular_velocity": 500,  # deg/s
     "asymmetry_max": 15,  # porcentaje
+    "moderate_asymmetry": 10,  # %
+    "severe_asymmetry": 20,  # %
     "signal_quality_min": 60  # porcentaje
 }
 
@@ -216,6 +221,12 @@ ALERT_LEVELS = {
 # ==================== VALORES DE REFERENCIA (Literatura) ====================
 
 REFERENCE_VALUES = {
+    # Rangos normales de movimiento articular
+    "knee_flexion_rom": (0, 135),  # grados (Norkin & White, 2016)
+    "hip_flexion_rom": (0, 120),  # grados
+    "ankle_dorsiflexion_rom": (-20, 30),  # grados
+
+    # Ejercicios específicos
     "squat": {
         "rom_knee": {"mean": 75, "std": 10, "range": (60, 90), "unit": "°"},
         "moment_peak": {"mean": 2.0, "std": 0.5, "range": (1.5, 2.5), "unit": "Nm/kg"},
