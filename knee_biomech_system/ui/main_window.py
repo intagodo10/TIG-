@@ -12,7 +12,9 @@ from config.settings import UI_CONFIG
 from ui.components import AlertManager, MetricCard
 from ui.views.patient_view import PatientView
 from ui.views.capture_view import CaptureView
+from ui.views.analysis_view import AnalysisView
 from models.patient import Patient
+from core.analysis.biomech_analyzer import AnalysisResult
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -183,11 +185,18 @@ class MainWindow(ctk.CTk):
         self.patient_view.pack(fill="both", expand=True)
 
         # Vista de Captura
-        self.capture_view = CaptureView(self.tab_capture)
+        self.capture_view = CaptureView(
+            self.tab_capture,
+            on_analysis_complete=self._on_analysis_complete
+        )
         self.capture_view.pack(fill="both", expand=True)
 
-        # Análisis (placeholder)
-        self._setup_analysis_placeholder()
+        # Vista de Análisis
+        self.analysis_view = AnalysisView(
+            self.tab_analysis,
+            on_export_report=self._on_export_report
+        )
+        self.analysis_view.pack(fill="both", expand=True)
 
         # Reportes (placeholder)
         self._setup_reports_placeholder()
@@ -250,27 +259,46 @@ class MainWindow(ctk.CTk):
         )
         info_text.pack(padx=30, pady=30)
 
-    def _setup_analysis_placeholder(self):
-        """Configura placeholder de análisis."""
-        analysis_frame = ctk.CTkFrame(self.tab_analysis, fg_color=COLORS["bg_primary"])
-        analysis_frame.pack(fill="both", expand=True, padx=20, pady=20)
+    def _on_analysis_complete(self, result: AnalysisResult):
+        """
+        Callback cuando se completa un análisis.
 
-        title = ctk.CTkLabel(
-            analysis_frame,
-            text="Análisis de Datos",
-            font=ctk.CTkFont(size=FONTS["size_xxlarge"], weight=FONTS["weight_bold"]),
-            text_color=COLORS["text_primary"]
-        )
-        title.pack(pady=(0, 20), anchor="w")
+        Args:
+            result: Resultado del análisis
+        """
+        logger.info("Análisis completado, actualizando vista de análisis")
 
-        info = ctk.CTkLabel(
-            analysis_frame,
-            text="Vista de análisis en desarrollo\n\nAquí se mostrarán:\n• Métricas calculadas\n• Gráficos comparativos\n• Alertas biomecánicas\n• Validación de datos",
-            font=ctk.CTkFont(size=FONTS["size_normal"]),
-            text_color=COLORS["text_secondary"],
-            justify="center"
+        # Actualizar vista de análisis
+        self.analysis_view.update_results(result)
+
+        # Cambiar a la pestaña de análisis
+        self.tabview.set("📈 Análisis")
+
+        # Mostrar alerta de éxito
+        self.alert_manager.success(
+            "Análisis completado exitosamente",
+            duration=3000
         )
-        info.pack(expand=True)
+
+        # Actualizar estado
+        self.update_status("Análisis completado")
+
+    def _on_export_report(self, result: AnalysisResult):
+        """
+        Callback para exportar reporte.
+
+        Args:
+            result: Resultado del análisis
+        """
+        logger.info("Exportando reporte...")
+
+        # TODO: Implementar exportación de reporte
+        self.alert_manager.info(
+            "Exportación de reportes en desarrollo",
+            duration=3000
+        )
+
+        self.update_status("Reporte exportado")
 
     def _setup_reports_placeholder(self):
         """Configura placeholder de reportes."""

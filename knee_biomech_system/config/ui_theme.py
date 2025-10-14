@@ -20,6 +20,7 @@ COLORS = {
 
     # Acentos
     "accent_primary": "#00d4aa",  # Verde azulado
+    "accent_hover": "#00bd98",    # Verde azulado oscuro (hover)
     "accent_secondary": "#4a9eff",  # Azul
     "accent_tertiary": "#9d4edd",  # Púrpura
 
@@ -27,6 +28,7 @@ COLORS = {
     "success": "#6bcf7f",
     "warning": "#ffd93d",
     "error": "#ff6b6b",
+    "error_secondary": "#ff9a8a",  # Error más suave
     "info": "#4a9eff",
 
     # Texto
@@ -84,6 +86,14 @@ FONTS = {
     "weight_light": "normal",
     "weight_normal": "normal",
     "weight_bold": "bold",
+
+    # Aliases para compatibilidad
+    "title": ("Roboto", 24, "bold"),
+    "heading": ("Roboto", 18, "bold"),
+    "subheading": ("Roboto", 14, "bold"),
+    "body": ("Roboto", 12, "normal"),
+    "small": ("Roboto", 10, "normal"),
+    "button": ("Roboto", 12, "bold"),
 }
 
 # ==================== ESPACIADO ====================
