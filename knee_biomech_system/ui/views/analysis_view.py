@@ -527,24 +527,31 @@ class AnalysisView(ctk.CTkFrame):
         main_container.grid_columnconfigure(1, weight=1)  # Métricas
         main_container.grid_columnconfigure(2, weight=1)  # Alertas
 
-        # Columna 1: Gráficos
-        graphs_frame = ctk.CTkFrame(main_container, fg_color=COLORS["bg_secondary"])
-        graphs_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        # Columna 1: Gráficos (scrollable)
+        graphs_container = ctk.CTkFrame(main_container, fg_color=COLORS["bg_secondary"])
+        graphs_container.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
         graphs_label = ctk.CTkLabel(
-            graphs_frame,
+            graphs_container,
             text="📊 Visualización",
             font=FONTS["heading"],
             text_color=COLORS["text_primary"]
         )
         graphs_label.pack(pady=(15, 10), padx=15, anchor="w")
 
-        # 4 gráficos
-        self.angle_plot = PlotWidget(graphs_frame, title="Ángulo de Rodilla")
-        self.angle_plot.pack(fill="both", expand=True, padx=10, pady=5)
+        # Frame scrollable para los gráficos
+        graphs_frame = ctk.CTkScrollableFrame(
+            graphs_container,
+            fg_color="transparent"
+        )
+        graphs_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
-        self.grf_plot = PlotWidget(graphs_frame, title="Fuerza de Reacción al Suelo")
-        self.grf_plot.pack(fill="both", expand=True, padx=10, pady=5)
+        # Gráficos con altura mínima fija
+        self.angle_plot = PlotWidget(graphs_frame, title="Ángulo de Rodilla", height=300)
+        self.angle_plot.pack(fill="x", padx=5, pady=5)
+
+        self.grf_plot = PlotWidget(graphs_frame, title="Fuerza de Reacción al Suelo", height=300)
+        self.grf_plot.pack(fill="x", padx=5, pady=5)
 
         # Columna 2: Métricas
         self.metrics_table = MetricsTable(
