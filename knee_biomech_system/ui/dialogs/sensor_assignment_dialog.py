@@ -6,6 +6,7 @@ Permite escanear, visualizar y asignar sensores Xsens DOT a ubicaciones del cuer
 
 import customtkinter as ctk
 import asyncio
+import threading 
 from typing import Dict, List, Optional
 from tkinter import messagebox
 
@@ -250,8 +251,34 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
             text_color=COLORS["warning"]
         )
 
-        # Ejecutar escaneo en thread separado
-        asyncio.run(self._scan_async())
+        # ✅ Ejecutar escaneo en un hilo de trabajo (no bloquear GUI)
+        t = threading.Thread(target=self._scan_worker, daemon=True)
+        t.start()
+
+    def _scan_worker(self):
+        """
+        Hilo de trabajo: prepara el hilo en modo compatible con Bleak
+        y ejecuta la corrutina de escaneo.
+        """
+        try:
+            # 👇 Muy importante en Windows:
+            # Si algún paquete puso el hilo en STA, lo “desinicializamos”
+            # para que Bleak pueda usar MTA internamente.
+            try:
+                from bleak.backends.winrt.util import uninitialize_sta
+                uninitialize_sta()
+            except Exception:
+                # Si no aplica/ya está OK, seguimos
+                pass
+
+            # Ejecutar la corrutina real en este hilo
+            asyncio.run(self._scan_async())
+
+        except Exception as e:
+            logger.error(f"Error en _scan_worker: {e}", exc_info=True)
+            # Volver al hilo de la GUI para mostrar error y reactivar botón
+            self.after(0, lambda: self._scan_error(str(e)))
+
 
     async def _scan_async(self):
         """Escanea sensores de forma asíncrona."""

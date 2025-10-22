@@ -6,6 +6,9 @@ Punto de entrada principal de la aplicación.
 """
 
 import sys
+# 👇 Muy importante en Windows: fuerza MTA para que Bleak reciba callbacks WinRT
+# Debe ir ANTES de cualquier import que pueda tocar COM/pywin32/customtkinter, etc.
+sys.coinit_flags = 0
 import os
 from pathlib import Path
 

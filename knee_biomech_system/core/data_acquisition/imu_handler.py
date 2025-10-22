@@ -493,7 +493,22 @@ class IMUHandler:
             return xsens_devices
 
         except Exception as e:
-            logger.error(f"❌ Error escaneando sensores: {str(e)}", exc_info=True)
+            # Mapear errores comunes del entorno BT a un mensaje claro
+            msg = str(e).lower()
+            winerr = getattr(e, "winerror", None)
+
+            if isinstance(e, OSError) and (
+                winerr in (21, 4319)  # 21 = ERROR_NOT_READY, 4319 es frecuente en watcher
+                or "no está listo" in msg
+                or "device not ready" in msg
+            ):
+                logger.error("❌ Bluetooth del sistema no está listo. "
+                            "Verifica que el radio BT esté activado, el servicio 'bthserv' en ejecución "
+                            "y el adaptador BLE aparezca correctamente en el Administrador de dispositivos.",
+                            exc_info=True)
+            else:
+                logger.error(f"❌ Error escaneando sensores: {str(e)}", exc_info=True)
+
             return []
 
     async def connect_sensor(self, location: str, address: str) -> bool:
