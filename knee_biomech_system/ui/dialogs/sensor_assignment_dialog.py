@@ -40,6 +40,7 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
 
         self.required_locations = required_locations
         self.scanned_sensors: List[Dict] = []  # Lista de sensores encontrados
+        self._last_scan_meta = {"total_seen": None, "preview": []}
         self.assignments: Dict[str, str] = {}  # {location: sensor_address}
         self.result = None  # Resultado final del diálogo
 
@@ -287,11 +288,13 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
             from core.data_acquisition.imu_handler import IMUHandler
 
             handler = IMUHandler()
-            sensors = await handler.scan_sensors(duration=10.0)
+            result = await handler.scan_sensors(duration=10.0, return_debug=True)
 
-            self.scanned_sensors = sensors
-
-            # Actualizar UI en el hilo principal
+            self.scanned_sensors = result.get("xsens", [])
+            self._last_scan_meta = {
+                "total_seen": result.get("total_seen", None),
+                "preview": result.get("preview", [])
+            }
             self.after(0, self._update_sensor_list)
 
         except ImportError as e:
@@ -308,20 +311,52 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
             widget.destroy()
 
         if not self.scanned_sensors:
-            # No se encontraron sensores
+            total_seen = self._last_scan_meta.get("total_seen")
+            suffix = f" (BLE visibles: {total_seen})" if isinstance(total_seen, int) else ""
             self.scan_status_label.configure(
-                text="⚠️ No se encontraron sensores Xsens DOT",
+                text=f"⚠️ No se encontraron sensores Xsens DOT{suffix}",
                 text_color=COLORS["warning"]
             )
 
+            # Mensaje principal
             ctk.CTkLabel(
                 self.sensor_list_frame,
-                text="No se encontraron sensores.\n\nVerifica que:\n• Los sensores estén encendidos (LED azul)\n• Bluetooth esté activado",
+                text="No se encontraron sensores.\n\nVerifica que:\n• Los sensores estén encendidos (LED azul)\n• Bluetooth esté activado\n• No estén conectados a otra app",
                 font=ctk.CTkFont(size=FONTS["size_small"]),
                 text_color=COLORS["text_secondary"],
                 justify="left"
-            ).pack(padx=10, pady=20)
+            ).pack(padx=10, pady=(10, 10), anchor="w")
+
+            # 👇 Bloque opcional de diagnóstico: muestra una “preview” de lo visto
+            preview = self._last_scan_meta.get("preview") or []
+            if isinstance(total_seen, int):
+                ctk.CTkLabel(
+                    self.sensor_list_frame,
+                    text=f"Dispositivos BLE detectados en el entorno: {total_seen}",
+                    font=ctk.CTkFont(size=FONTS["size_small"], weight=FONTS["weight_bold"]),
+                    text_color=COLORS["text_primary"],
+                    justify="left"
+                ).pack(padx=10, pady=(0, 6), anchor="w")
+
+            if preview:
+                # Mostrar hasta 5 para no saturar
+                lines = []
+                for p in preview[:5]:
+                    addr_tail = p.get("address", "")[-8:] if p.get("address") else "??"
+                    rssi = p.get("rssi", "—")
+                    name = p.get("name", "(sin nombre)")
+                    lines.append(f"• {name} (...{addr_tail})  RSSI: {rssi}")
+                ctk.CTkLabel(
+                    self.sensor_list_frame,
+                    text="\n".join(lines),
+                    font=ctk.CTkFont(size=FONTS["size_small"]),
+                    text_color=COLORS["text_secondary"],
+                    justify="left"
+                ).pack(padx=16, pady=(0, 10), anchor="w")
+
         else:
+            total_seen = self._last_scan_meta.get("total_seen")
+            suffix = f" (BLE visibles: {total_seen})" if isinstance(total_seen, int) else ""
             # Mostrar sensores encontrados
             self.scan_status_label.configure(
                 text=f"✓ Se encontraron {len(self.scanned_sensors)} sensores",

@@ -451,19 +451,12 @@ class IMUHandler:
 
         logger.info(f"IMUHandler inicializado con {len(self.sensors)} sensores")
 
-    async def scan_sensors(self, duration: float = 10.0) -> List[Dict]:
-        """
-        Escanea sensores Xsens DOT disponibles.
+    from typing import Any, Union
 
-        Args:
-            duration: Duración del escaneo en segundos (recomendado: 10s)
-
-        Returns:
-            Lista de diccionarios con información de sensores encontrados
-        """
+    async def scan_sensors(self, duration: float = 10.0, return_debug: bool = False) -> Union[List[Dict], Dict[str, Any]]:
         if not BLUETOOTH_AVAILABLE:
             logger.error("❌ Bluetooth no disponible - instalar bleak")
-            return []
+            return [] if not return_debug else {"xsens": [], "total_seen": 0, "preview": []}
 
         try:
             logger.info(f"🔍 Escaneando sensores Xsens DOT por {duration}s...")
@@ -471,45 +464,43 @@ class IMUHandler:
 
             devices = await BleakScanner.discover(timeout=duration)
 
-            # Filtrar solo sensores Xsens DOT
+            logger.info(f"BLE (sin filtrar): vistos {len(devices)} dispositivos")
+            # Muestra algunos dispositivos para diagnóstico en DEBUG
+            for d in devices[:10]:
+                uuids = getattr(d, "metadata", {}).get("uuids")
+                logger.debug(f"BLE> name={d.name} addr={d.address} rssi={getattr(d, 'rssi', None)} uuids={uuids}")
+
+            # Filtrar solo sensores Xsens DOT (por nombre; puedes ampliar por UUID si quieres)
             xsens_devices = []
             for device in devices:
                 if device.name and is_xsens_dot_device(device.name):
                     xsens_devices.append({
                         "name": device.name,
                         "address": device.address,
-                        "rssi": device.rssi if hasattr(device, 'rssi') else -100
+                        "rssi": getattr(device, 'rssi', -100)
                     })
-                    logger.debug(f"Encontrado: {device.name} @ {device.address} (RSSI: {device.rssi if hasattr(device, 'rssi') else 'N/A'})")
 
             logger.info(f"✓ Encontrados {len(xsens_devices)} sensores Xsens DOT")
 
-            if len(xsens_devices) == 0:
-                logger.warning("⚠️  No se encontraron sensores. Verificar:")
-                logger.warning("   1. Sensores encendidos (presionar botón hasta LED azul)")
-                logger.warning("   2. Bluetooth activado en el computador")
-                logger.warning("   3. Sensores no conectados a otra aplicación")
-
-            return xsens_devices
+            if not return_debug:
+                return xsens_devices
+            else:
+                preview = [{
+                    "name": d.name or "(sin nombre)",
+                    "address": d.address,
+                    "rssi": getattr(d, "rssi", None)
+                } for d in devices[:10]]
+                return {"xsens": xsens_devices, "total_seen": len(devices), "preview": preview}
 
         except Exception as e:
-            # Mapear errores comunes del entorno BT a un mensaje claro
             msg = str(e).lower()
             winerr = getattr(e, "winerror", None)
-
-            if isinstance(e, OSError) and (
-                winerr in (21, 4319)  # 21 = ERROR_NOT_READY, 4319 es frecuente en watcher
-                or "no está listo" in msg
-                or "device not ready" in msg
-            ):
-                logger.error("❌ Bluetooth del sistema no está listo. "
-                            "Verifica que el radio BT esté activado, el servicio 'bthserv' en ejecución "
-                            "y el adaptador BLE aparezca correctamente en el Administrador de dispositivos.",
-                            exc_info=True)
+            if isinstance(e, OSError) and (winerr in (21, 4319) or "no está listo" in msg or "device not ready" in msg):
+                logger.error("❌ Bluetooth del sistema no está listo. Verifica radio BT, servicio 'bthserv' y drivers.", exc_info=True)
             else:
                 logger.error(f"❌ Error escaneando sensores: {str(e)}", exc_info=True)
 
-            return []
+            return [] if not return_debug else {"xsens": [], "total_seen": 0, "preview": []}
 
     async def connect_sensor(self, location: str, address: str) -> bool:
         """
