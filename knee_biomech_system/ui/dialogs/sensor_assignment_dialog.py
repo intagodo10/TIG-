@@ -278,7 +278,7 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
         except Exception as e:
             logger.error(f"Error en _scan_worker: {e}", exc_info=True)
             # Volver al hilo de la GUI para mostrar error y reactivar botón
-            self.after(0, lambda: self._scan_error(str(e)))
+            self.after(0, self._scan_error, str(e))
 
 
     async def _scan_async(self):
@@ -297,12 +297,17 @@ class SensorAssignmentDialog(ctk.CTkToplevel):
             }
             self.after(0, self._update_sensor_list)
 
-        except ImportError as e:
-            logger.error(f"Error importando IMUHandler: {e}")
-            self.after(0, lambda: self._scan_error("Librería 'bleak' no instalada"))
+        except ModuleNotFoundError as e:
+            # Log con traza para diagnóstico
+            logger.error(f"Error importando IMUHandler (módulo faltante: {e.name}): {e}", exc_info=True)
+            # Mensaje más específico según el módulo que falte
+            if e.name == "bleak":
+                self.after(0, self._scan_error, "La librería 'bleak' no está instalada. Instálala con: pip install bleak")
+            else:
+                self.after(0, self._scan_error, f"Falta el módulo '{e.name}'. Instálalo e inténtalo de nuevo.")
         except Exception as e:
             logger.error(f"Error durante escaneo: {e}", exc_info=True)
-            self.after(0, lambda: self._scan_error(str(e)))
+            self.after(0, self._scan_error, str(e))
 
     def _update_sensor_list(self):
         """Actualiza la lista de sensores encontrados."""
